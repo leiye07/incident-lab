@@ -1,0 +1,72 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "deterministic",
+        "trajectory",
+        "domain",
+        "semantic",
+        "operational"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "unknown",
+        "skipped",
+        "errored"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "evaluator": {
+      "title": "Evaluator",
+      "type": "string"
+    },
+    "evaluator_version": {
+      "title": "Evaluator Version",
+      "type": "string"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "title": "Metrics",
+      "type": "object"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "category",
+    "status",
+    "evaluator",
+    "evaluator_version",
+    "configuration",
+    "metrics",
+    "provenance",
+    "reason"
+  ],
+  "title": "Evaluation",
+  "type": "object"
+}

@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "scenario_id": {
+      "enum": [
+        "latency-team",
+        "latency-solo",
+        "errors-team",
+        "errors-solo",
+        "outage-team",
+        "outage-solo"
+      ],
+      "title": "Scenario Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "scenario_id"
+  ],
+  "title": "StartRequest",
+  "type": "object"
+}

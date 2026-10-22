@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "minimum": 1,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "state_transition",
+        "plan_recorded",
+        "handoff_recorded",
+        "tool_called",
+        "tool_completed",
+        "observation_recorded",
+        "memory_updated",
+        "context_assembled",
+        "model_completed",
+        "validation_rejected",
+        "evaluation_recorded"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    }
+  },
+  "required": [
+    "seq",
+    "occurred_at",
+    "kind",
+    "data"
+  ],
+  "title": "Event",
+  "type": "object"
+}

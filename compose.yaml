@@ -1,0 +1,78 @@
+name: incidentlab
+x-runtime: &runtime
+  build: .
+  image: incidentlab:1.0
+  init: true
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp:size=16m,mode=1777]
+  environment: &environment
+    DATABASE_URL: postgresql://incidentlab:incidentlab-local-only@postgres:5432/incidentlab
+    MODEL_EXECUTION_ENABLED: ${MODEL_EXECUTION_ENABLED:-false}
+    INCIDENTLAB_MODEL: ${INCIDENTLAB_MODEL:-}
+    DEMO_TOKEN_FILE: /run/secrets/demo_token
+  secrets: [demo_token]
+  networks: [internal]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 100
+  mem_limit: 512m
+  cpus: 1
+  stop_grace_period: 10s
+  depends_on:
+    postgres: {condition: service_healthy}
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_USER: incidentlab
+      POSTGRES_DB: incidentlab
+      POSTGRES_PASSWORD: incidentlab-local-only
+    volumes: [incidentlab-data:/var/lib/postgresql/data]
+    networks: [internal]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U incidentlab -d incidentlab]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    <<: *runtime
+    ports: ['127.0.0.1:8030:8030']
+    networks: [internal, integration]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8030/readyz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  worker:
+    <<: *runtime
+    command: [python, -m, incidentlab.worker]
+    environment:
+      <<: *environment
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+    secrets: [demo_token, anthropic_api_key]
+    networks: [internal, provider-egress]
+    healthcheck:
+      test: [CMD, python, -c, "from incidentlab.db import connect; c=connect(); db=c.__enter__(); assert db.execute(\"SELECT 1 FROM runtime_health WHERE id='worker' AND last_seen>now()-interval '15 seconds'\").fetchone()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  incidentlab-data: {}
+networks:
+  internal:
+    internal: true
+  integration: {}
+  provider-egress: {}
+secrets:
+  demo_token:
+    file: ./secrets/demo_token
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key

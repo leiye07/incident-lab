@@ -1,0 +1,323 @@
+{
+  "$defs": {
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "cause": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Cause",
+          "type": "string"
+        },
+        "observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Observation Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cause",
+        "observation_ids"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "metrics",
+            "logs",
+            "probe",
+            "action",
+            "rejection"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "kind",
+        "data"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "PlanRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/Hypothesis"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "finish_recommended": {
+          "default": false,
+          "title": "Finish Recommended",
+          "type": "boolean"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "actor": {
+          "enum": [
+            "planner",
+            "single_agent"
+          ],
+          "title": "Actor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hypotheses",
+        "steps",
+        "revision",
+        "actor"
+      ],
+      "title": "PlanRecord",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "enum": [
+            "read_metrics",
+            "read_logs",
+            "probe",
+            "act"
+          ],
+          "title": "Tool",
+          "type": "string"
+        },
+        "purpose": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "purpose"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "model_calls": {
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Model Calls",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "model_calls"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "diagnosis": {
+      "enum": [
+        "pool_exhaustion",
+        "bad_release",
+        "inventory_failure",
+        "unknown"
+      ],
+      "title": "Diagnosis",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 1400,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "uncertainties": {
+      "items": {
+        "maxLength": 400,
+        "type": "string"
+      },
+      "maxItems": 6,
+      "title": "Uncertainties",
+      "type": "array"
+    },
+    "observation_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "title": "Observation Ids",
+      "type": "array"
+    },
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "artifact_type": {
+      "const": "incident_report",
+      "default": "incident_report",
+      "title": "Artifact Type",
+      "type": "string"
+    },
+    "simulated": {
+      "const": true,
+      "default": true,
+      "title": "Simulated",
+      "type": "boolean"
+    },
+    "scenario_id": {
+      "enum": [
+        "latency-team",
+        "latency-solo",
+        "errors-team",
+        "errors-solo",
+        "outage-team",
+        "outage-solo"
+      ],
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "topology": {
+      "enum": [
+        "planner_executor",
+        "single_agent"
+      ],
+      "title": "Topology",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "recovered": {
+      "title": "Recovered",
+      "type": "boolean"
+    },
+    "diagnosis_correct": {
+      "title": "Diagnosis Correct",
+      "type": "boolean"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/Observation"
+      },
+      "maxItems": 17,
+      "title": "Observations",
+      "type": "array"
+    },
+    "plans": {
+      "items": {
+        "$ref": "#/$defs/PlanRecord"
+      },
+      "maxItems": 10,
+      "title": "Plans",
+      "type": "array"
+    },
+    "action_count": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Action Count",
+      "type": "integer"
+    },
+    "simulated_steps": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Simulated Steps",
+      "type": "integer"
+    },
+    "invalid_calls": {
+      "maximum": 16,
+      "minimum": 0,
+      "title": "Invalid Calls",
+      "type": "integer"
+    },
+    "model_usage": {
+      "$ref": "#/$defs/Usage"
+    },
+    "versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "required": [
+    "diagnosis",
+    "summary",
+    "uncertainties",
+    "observation_ids",
+    "scenario_id",
+    "topology",
+    "seed",
+    "recovered",
+    "diagnosis_correct",
+    "observations",
+    "plans",
+    "action_count",
+    "simulated_steps",
+    "invalid_calls",
+    "model_usage",
+    "versions"
+  ],
+  "title": "IncidentReport",
+  "type": "object"
+}

@@ -1,0 +1,10 @@
+# Optional bridge to the independent Agent Sandbox deployment.
+services:
+  api:
+    networks:
+      integration:
+        aliases: [incidentlab-demo]
+networks:
+  integration:
+    external: true
+    name: showroom-integration

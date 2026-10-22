@@ -1,0 +1,89 @@
+{
+  "$defs": {
+    "Hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "cause": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Cause",
+          "type": "string"
+        },
+        "observation_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Observation Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cause",
+        "observation_ids"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "enum": [
+            "read_metrics",
+            "read_logs",
+            "probe",
+            "act"
+          ],
+          "title": "Tool",
+          "type": "string"
+        },
+        "purpose": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "purpose"
+      ],
+      "title": "Step",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/Hypothesis"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "title": "Hypotheses",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "finish_recommended": {
+      "default": false,
+      "title": "Finish Recommended",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "hypotheses",
+    "steps"
+  ],
+  "title": "PlanInput",
+  "type": "object"
+}
