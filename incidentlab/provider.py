@@ -11,12 +11,18 @@ class ProviderFailure(RuntimeError):
 
 class AnthropicProvider:
     def __init__(self, transport=None):
+        provider = config.model_provider()
+        if provider not in {"anthropic", "openrouter"}:
+            raise ProviderFailure("Unsupported model provider")
+        self.message_path = "/api/v1/messages" if provider == "openrouter" else "/v1/messages"
+        headers = {"anthropic-version": "2023-06-01"}
+        if provider == "openrouter":
+            headers["Authorization"] = "Bearer " + config.provider_key()
+        else:
+            headers["x-api-key"] = config.provider_key()
         self.client = httpx.Client(
-            base_url="https://api.anthropic.com",
-            headers={
-                "x-api-key": config.provider_key(),
-                "anthropic-version": "2023-06-01",
-            },
+            base_url="https://openrouter.ai" if provider == "openrouter" else "https://api.anthropic.com",
+            headers=headers,
             timeout=httpx.Timeout(25, connect=5),
             follow_redirects=False,
             trust_env=False,
@@ -28,7 +34,7 @@ class AnthropicProvider:
         try:
             with self.client.stream(
                 "POST",
-                "/v1/messages",
+                self.message_path,
                 json={
                     "model": config.model(),
                     "max_tokens": 2400,

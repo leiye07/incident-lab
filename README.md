@@ -21,3 +21,12 @@ The report records public observations, plans, outcome metrics, diagnosis correc
 ## Development
 
 Install requirements-dev.lock into a virtual environment. Set TEST_DATABASE_URL to a disposable IncidentLab-only PostgreSQL database, then `pytest -q`. Tests truncate runtime tables; never use a production or sandbox DB. `PYTHONPATH=. python scripts/export_contracts.py` regenerates wire contracts. Test providers are explicit fixtures, not production fallbacks.
+
+## OpenRouter provider
+
+Use `MODEL_PROVIDER=openrouter` in the runtime `.env` with an explicit OpenRouter model ID
+(e.g. `openai/gpt-oss-120b`). The production Compose overlay passes this setting to the worker.
+The existing `secrets/anthropic_api_key` file is the provider credential mount; for OpenRouter it must
+contain the OpenRouter key. It is sent using bearer authentication only to `https://openrouter.ai/api/v1/messages`.
+The default `MODEL_PROVIDER=anthropic` keeps the direct Anthropic endpoint and authentication.
+Request/response bounds, tool schemas, execution budgets and sanitized errors remain enforced.

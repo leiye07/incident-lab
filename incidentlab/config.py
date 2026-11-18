@@ -14,7 +14,7 @@ def demo_token():
 
 
 def provider_key():
-    return secret("ANTHROPIC_API_KEY_FILE", "/run/secrets/anthropic_api_key")
+    return secret("MODEL_API_KEY_FILE", os.getenv("ANTHROPIC_API_KEY_FILE", "/run/secrets/anthropic_api_key"))
 
 
 def model():
@@ -37,3 +37,7 @@ def admission_configured():
         and bool(model())
         and len(demo_token()) >= 32
     )
+
+
+def model_provider():
+    return os.getenv("MODEL_PROVIDER", "anthropic").strip().lower()

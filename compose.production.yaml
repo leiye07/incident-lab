@@ -1,0 +1,11 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?required}
+  api:
+    environment:
+      DATABASE_URL: postgresql://incidentlab:${DB_PASSWORD:?required}@postgres:5432/incidentlab
+  worker:
+    environment:
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-anthropic}
+      DATABASE_URL: postgresql://incidentlab:${DB_PASSWORD:?required}@postgres:5432/incidentlab
