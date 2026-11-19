@@ -362,7 +362,7 @@ def test_provider_wire_protocol_and_sanitized_errors(client):
     def handler(req):
         payload = json.loads(req.content)
         assert payload["tool_choice"] == {
-            "type": "auto",
+            "type": "any",
             "disable_parallel_tool_use": True,
         }
         assert payload["model"] == "test-model-not-production"
@@ -411,3 +411,127 @@ def test_model_cannot_set_recovery_or_grade():
             observation_ids=["obs-000"],
             recovered=True,
         )
+
+
+@pytest.mark.parametrize('bad_mode',['schema','unknown_tool','multiple_calls','unknown_evidence','no_tool'])
+def test_invalid_model_output_is_corrected_with_feedback(client,bad_mode):
+    class CorrectingProvider(ScriptedProvider):
+        first=True
+        def complete(self,system,messages,tools):
+            result=super().complete(system,messages,tools)
+            if self.first:
+                self.first=False
+                if bad_mode=='schema':result['calls'][0]['input']={'unexpected':'private-model-text'}
+                elif bad_mode=='unknown_tool':result['calls'][0]['name']='forbidden'
+                elif bad_mode=='unknown_evidence':result['calls'][0]['input']['hypotheses'][0]['observation_ids']=['obs-999']
+                elif bad_mode=='no_tool':result['calls']=[]
+                else:result['calls']=result['calls']*2
+            return result
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    provider=CorrectingProvider('latency-team');result=run(eid,provider)
+    assert result.recovered
+    assert provider.contexts[1][1]['last_validation_feedback'] is not None
+    assert provider.contexts[1][1]['environment_revision']==0
+    events=client.get('/demo/v1/executions/'+eid).json()['events']
+    rejected=[e for e in events if e['kind']=='validation_rejected']
+    assert rejected and 'private-model-text' not in json.dumps(rejected)
+
+
+def test_repeated_invalid_model_output_stops_at_three_attempts(client):
+    from incidentlab.engine import ModelOutputError
+    class InvalidProvider(ScriptedProvider):
+        calls=0
+        def complete(self,*args):
+            self.calls+=1
+            result=super().complete(*args)
+            result['calls'][0]['input']={}
+            return result
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    provider=InvalidProvider('latency-team')
+    with pytest.raises(ModelOutputError,match='validation_retries_exhausted'):run(eid,provider)
+    assert provider.calls==3
+
+
+def test_plan_revision_is_not_used_as_environment_revision(client):
+    class StaleOnce(ScriptedProvider):
+        stale=False
+        def complete(self,system,messages,tools):
+            result=super().complete(system,messages,tools)
+            context=json.loads(messages[0]['content'])
+            if context['current_plan'] and not self.stale:
+                self.stale=True
+                result['calls'][0]['input']['revision']=context['current_plan']['revision']
+            return result
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    provider=StaleOnce('latency-team');report=run(eid,provider)
+    assert report.recovered and report.invalid_calls==1
+    rejection=next(o for o in report.observations if o.kind=='rejection')
+    assert 'environment_revision 0, not plan revision 1' in rejection.data['reason']
+
+
+def test_terminal_diagnostics_do_not_persist_exception_text(client,monkeypatch):
+    from incidentlab import runner
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    class NoModel:
+        def close(self):pass
+    def fail(*args):raise ValueError('secret-not-for-evidence')
+    monkeypatch.setattr(runner,'create_provider',NoModel)
+    monkeypatch.setattr(runner,'run',fail)
+    with pytest.raises(SystemExit):runner.main(eid)
+    with db.connect() as c:
+        row=c.execute('SELECT failure_code FROM executions WHERE id=%s',(eid,)).fetchone()
+        events=c.execute('SELECT data FROM evidence_events WHERE execution_id=%s',(eid,)).fetchall()
+    assert row['failure_code']=='execution_error'
+    assert 'value_error' in json.dumps(events)
+    assert 'secret-not-for-evidence' not in json.dumps(events)
+
+
+def test_upstream_schema_rejection_is_counted_and_recoverable(client):
+    from incidentlab.provider import ModelOutputRejected
+    class RejectedOnce(ScriptedProvider):
+        rejected=False
+        def complete(self,*args):
+            if not self.rejected:
+                self.rejected=True
+                raise ModelOutputRejected(category='upstream_tool_schema')
+            return super().complete(*args)
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    report=run(eid,RejectedOnce('latency-team'))
+    assert report.recovered and report.model_usage.model_calls==11
+
+
+def test_plans_and_citations_cover_full_observation_history():
+    from incidentlab.contracts import Hypothesis,Step
+    p=PlanInput(hypotheses=[Hypothesis(cause='Observed symptoms',observation_ids=[f'obs-{i}' for i in range(17)])]*8,steps=[Step(tool='probe',purpose='Investigate')]*8)
+    assert len(p.steps)==8
+    with pytest.raises(ValueError):PlanInput(**{**p.model_dump(),'steps':p.model_dump()['steps']*2})
+
+
+def test_planner_context_separates_plan_shape_from_executor_arguments(client):
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    provider=ScriptedProvider('latency-team');run(eid,provider)
+    planner=[context for _,context in provider.contexts if context['current_plan'] is None]
+    assert planner and all('operation_schemas' not in context for context in planner)
+    assert planner[0]['plan_format']['step_keys']==['tool','purpose']
+
+
+def test_temporary_provider_failure_recovers_without_extra_environment_actions(client):
+    from incidentlab.provider import RetryableProviderFailure
+    class TemporaryFailure(ScriptedProvider):
+        failures=0
+        def complete(self,*args):
+            if self.failures<2:
+                self.failures+=1
+                raise RetryableProviderFailure(category='transient_http_502')
+            return super().complete(*args)
+    eid=submit(client)
+    with db.connect() as c:db.transition(c,eid,'running')
+    report=run(eid,TemporaryFailure('latency-team'))
+    assert report.recovered and report.action_count==1
+    assert report.model_usage.model_calls==12

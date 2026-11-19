@@ -27,6 +27,14 @@ Install requirements-dev.lock into a virtual environment. Set TEST_DATABASE_URL 
 Use `MODEL_PROVIDER=openrouter` in the runtime `.env` with an explicit OpenRouter model ID
 (e.g. `openai/gpt-oss-120b`). The production Compose overlay passes this setting to the worker.
 The existing `secrets/anthropic_api_key` file is the provider credential mount; for OpenRouter it must
-contain the OpenRouter key. It is sent using bearer authentication only to `https://openrouter.ai/api/v1/messages`.
+contain the OpenRouter key. It is sent using bearer authentication only to `https://openrouter.ai/api/v1/chat/completions`.
 The default `MODEL_PROVIDER=anthropic` keeps the direct Anthropic endpoint and authentication.
 Request/response bounds, tool schemas, execution budgets and sanitized errors remain enforced.
+
+Provider wire formats are implemented by explicit `AnthropicAdapter` and `OpenRouterAdapter`
+classes in `provider_adapters.py`, selected by `create_provider()`. The native OpenRouter adapter
+converts tool definitions, assistant function calls, tool results and provider usage; the Anthropic
+adapter retains Messages format. Schema rejections surfaced as HTTP errors are classified separately
+and corrected within existing model-call limits. No raw provider error text is exposed in evidence.
+
+Temporary provider 408/502/503/504 responses and timeouts can be retried up to three attempts within the existing model-call budget; rejected requests count toward that budget, and only provider-reported token usage is summed. Authentication, credit, rate-limit and configuration errors are not automatically retried.

@@ -6,7 +6,7 @@ from incidentlab import config
 
 @pytest.mark.parametrize("name,host,path,header", [
     ("anthropic", "api.anthropic.com", "/v1/messages", "x-api-key"),
-    ("openrouter", "openrouter.ai", "/api/v1/messages", "authorization"),
+    ("openrouter", "openrouter.ai", "/api/v1/chat/completions", "authorization"),
 ])
 def test_provider_routing_and_tool_response(monkeypatch, name, host, path, header):
     monkeypatch.setenv("MODEL_PROVIDER", name)
@@ -19,6 +19,10 @@ def test_provider_routing_and_tool_response(monkeypatch, name, host, path, heade
         assert ("x-api-key" in request.headers) == (name == "anthropic")
         body = json.loads(request.content)
         assert body["model"] == "explicit/test-model"
+        if name == "openrouter":
+            assert body["tool_choice"] == "required"
+            assert "anthropic-version" not in request.headers
+            return httpx.Response(200,json={"choices":[{"message":{"tool_calls":[{"id":"t1","type":"function","function":{"name":"check","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":4}})
         return httpx.Response(200, json={"stop_reason":"tool_use", "content":[{"type":"tool_use", "id":"t1", "name":"check", "input":{}}], "usage":{"input_tokens":3,"output_tokens":4}})
     p = AnthropicProvider(httpx.MockTransport(handler))
     try:

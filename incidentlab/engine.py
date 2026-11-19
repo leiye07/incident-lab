@@ -1,8 +1,9 @@
 import hashlib, json, time, uuid
 from pathlib import Path
-from pydantic import Field
+from pydantic import Field, ValidationError
 from psycopg.types.json import Jsonb
 from . import db, config, environment as sim
+from .provider import ModelOutputRejected, RetryableProviderFailure
 from .contracts import (
     Strict,
     Tool,
@@ -20,6 +21,13 @@ from .contracts import (
 
 class BudgetExceeded(RuntimeError):
     pass
+
+
+class ModelOutputError(ValueError):
+    """Recoverable model error; category never contains model text or credentials."""
+    def __init__(self, category):
+        self.category = category
+        super().__init__(category)
 
 
 class SoloInput(Strict):
@@ -40,6 +48,8 @@ ROOT = Path(__file__).parent
 def versions():
     return {
         "runtime": "1.0",
+        "provider": config.model_provider(),
+        "usage_accounting": "All model requests counted; tokens include reported usage only. Upstream-rejected responses may omit token usage.",
         "simulator": "1.0",
         "tools": "1.0",
         "model": config.model(),
@@ -85,6 +95,8 @@ class Investigator:
         self.usage = {"input_tokens": 0, "output_tokens": 0, "model_calls": 0}
         self.invalid = 0
         self.operations = 0
+        self.last_feedback = None
+        self.last_actor = "planner"
         self.started = time.monotonic()
         self.effective_models = set()
 
@@ -129,7 +141,41 @@ class Investigator:
             )
             db.append(c, self.eid, "observation_recorded", {"observation": observation})
 
+    def reject_model_output(self, actor, exc):
+        category = "schema_validation" if isinstance(exc, ValidationError) else exc.category
+        self.last_feedback = {
+            "category": category,
+            "instruction": "Correct the response using exactly one allowed tool and its schema. Cite only supplied observation IDs. Use environment_revision for operation revision; current_plan.revision is only a plan version.",
+        }
+        if isinstance(exc, ValidationError):
+            fields = {"hypotheses", "cause", "observation_ids", "steps", "tool", "purpose", "finish_recommended", "revision", "target", "action", "evidence_ids", "plan", "arguments", "diagnosis", "summary", "uncertainties"}
+            self.last_feedback["schema_errors"] = [
+                {"fields": [part for part in error["loc"] if isinstance(part, int) or part in fields], "type": error["type"]}
+                for error in exc.errors(include_input=False, include_context=False, include_url=False)[:8]
+            ]
+        db.record(self.eid, "validation_rejected", {
+            "actor": actor, "tool": "unrecognized",
+            "reason": "Model output rejected: " + category + ". Correct using the supplied schemas and observed evidence. " + json.dumps(getattr(exc, "diagnostic", {}), sort_keys=True),
+        })
+
     def call(self, actor, models, plan=None):
+        self.last_actor = actor
+        for attempt in range(3):
+            try:
+                result = self._call_once(actor, models, plan)
+                self.last_feedback = None
+                return result
+            except RetryableProviderFailure as exc:
+                db.record(self.eid, "validation_rejected", {"actor": actor, "tool": "unrecognized", "reason": "Temporary provider failure: " + exc.category + "; no tool ran. " + json.dumps(exc.diagnostic, sort_keys=True)})
+                if attempt == 2:
+                    raise
+                time.sleep(0.25 * (attempt + 1))
+            except (ModelOutputError, ValidationError, ModelOutputRejected) as exc:
+                self.reject_model_output(actor, exc)
+                if attempt == 2:
+                    raise ModelOutputError("validation_retries_exhausted") from None
+
+    def _call_once(self, actor, models, plan=None):
         self.guard()
         if self.usage["model_calls"] >= 20:
             raise BudgetExceeded("Model-call budget")
@@ -137,6 +183,10 @@ class Investigator:
             "task": self.definition["name"],
             "simulated": True,
             "revision": self.state["revision"],
+            "environment_revision": self.state["revision"],
+            "revision_rule": "Every operation revision must equal environment_revision; current_plan.revision is NOT an environment revision.",
+            "last_validation_feedback": self.last_feedback,
+            "allowed_probe_targets": ["pool", "release", "inventory"],
             "observations": self.observations,
             "working_memory": self.memory,
             "current_plan": plan,
@@ -148,6 +198,13 @@ class Investigator:
             },
             "verification": "Two healthy metrics observations after the last action are required. Recovery is graded independently.",
         }
+        if actor == "planner":
+            public.pop("operation_schemas")
+            public["plan_format"] = {
+                "hypothesis_keys": ["cause", "observation_ids"],
+                "step_keys": ["tool", "purpose"],
+                "rule": "Planning steps describe tool and purpose only. Do not include args, arguments, target or revision in a plan step; executor supplies operation parameters.",
+            }
         system = (
             ROOT
             / (
@@ -185,8 +242,8 @@ class Investigator:
                 "output_token_limit": 2400,
             },
         )
-        response = self.provider.complete(system, messages, schemas)
         self.usage["model_calls"] += 1
+        response = self.provider.complete(system, messages, schemas)
         for k in ["input_tokens", "output_tokens"]:
             value = response["usage"][k]
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -206,7 +263,7 @@ class Investigator:
         )
         calls = response["calls"]
         if len(calls) != 1 or calls[0].get("name") not in models:
-            raise ValueError("Expected exactly one allowed model tool call")
+            raise ModelOutputError("tool_selection")
         call = calls[0]
         value = models[call["name"]].model_validate(call["input"])
         return call["name"], value
@@ -216,7 +273,7 @@ class Investigator:
             raise BudgetExceeded("Plan budget")
         known = {o["id"] for o in self.observations}
         if any(not set(h.observation_ids) <= known for h in value.hypotheses):
-            raise ValueError("Plan cites unobserved evidence")
+            raise ModelOutputError("unobserved_plan_evidence")
         record = PlanRecord(
             **value.model_dump(), revision=len(self.plans) + 1, actor=actor
         ).model_dump(mode="json")
@@ -285,7 +342,7 @@ class Investigator:
             state = self.state
             kind = "rejection"
             data = {
-                "reason": "Operation rejected: check plan permission, current revision and matching probe evidence."
+                "reason": (f"Stale operation revision {args['revision']}; use environment_revision {self.state['revision']}, not plan revision {plan['revision']}." if args["revision"] != self.state["revision"] else "Operation rejected: check plan permission and matching probe evidence.")
             }
         observation = {
             "id": f"obs-{self.operations:03d}",
@@ -363,7 +420,7 @@ class Investigator:
         self.guard()
         known = {o["id"] for o in self.observations}
         if not set(value.observation_ids) <= known:
-            raise ValueError("Report cites unobserved evidence")
+            raise ModelOutputError("unobserved_report_evidence")
         v = versions()
         v["effective_models"] = ",".join(sorted(self.effective_models))
         report = IncidentReport(
@@ -462,21 +519,26 @@ def run(eid, provider):
     agent = Investigator(eid, row["scenario_id"], provider)
     agent.init()
     while True:
-        if agent.definition["topology"] == "planner_executor":
-            _, value = agent.call("planner", {"record_plan": PlanInput})
-            plan = agent.plan(value, "planner")
-            name, value = agent.call(
-                "executor", {**TOOLS, "finish_report": FinishInput}, plan
-            )
-        else:
-            name, value = agent.call(
-                "single_agent", {"decide": SoloInput, "finish_report": FinishInput}
-            )
+        try:
+            if agent.definition["topology"] == "planner_executor":
+                _, value = agent.call("planner", {"record_plan": PlanInput})
+                plan = agent.plan(value, "planner")
+                name, value = agent.call(
+                    "executor", {**TOOLS, "finish_report": FinishInput}, plan
+                )
+            else:
+                name, value = agent.call(
+                    "single_agent", {"decide": SoloInput, "finish_report": FinishInput}
+                )
+                if name == "finish_report":
+                    return agent.finish(value)
+                plan = agent.plan(value.plan, "single_agent")
+                name, args = value.tool, value.arguments
+                value = TOOLS[name].model_validate(args)
             if name == "finish_report":
                 return agent.finish(value)
-            plan = agent.plan(value.plan, "single_agent")
-            name, args = value.tool, value.arguments
-            value = TOOLS[name].model_validate(args)
-        if name == "finish_report":
-            return agent.finish(value)
-        agent.operate(name, value, plan)
+            agent.operate(name, value, plan)
+        except (ModelOutputError, ValidationError, ModelOutputRejected) as exc:
+            if isinstance(exc, ModelOutputError) and exc.category == "validation_retries_exhausted":
+                raise
+            agent.reject_model_output(agent.last_actor, exc)

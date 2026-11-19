@@ -150,7 +150,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 8,
+          "maxItems": 17,
           "minItems": 1,
           "title": "Observation Ids",
           "type": "array"
@@ -195,7 +195,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 12,
+          "maxItems": 17,
           "minItems": 1,
           "title": "Observation Ids",
           "type": "array"
@@ -361,7 +361,7 @@
           "items": {
             "$ref": "#/$defs/Hypothesis"
           },
-          "maxItems": 4,
+          "maxItems": 8,
           "minItems": 1,
           "title": "Hypotheses",
           "type": "array"
@@ -370,7 +370,7 @@
           "items": {
             "$ref": "#/$defs/Step"
           },
-          "maxItems": 3,
+          "maxItems": 8,
           "minItems": 1,
           "title": "Steps",
           "type": "array"
@@ -417,6 +417,7 @@
           "type": "string"
         },
         "purpose": {
+          "description": "Why this operation is needed. A step contains tool and purpose only, never operation arguments.",
           "maxLength": 300,
           "minLength": 1,
           "title": "Purpose",

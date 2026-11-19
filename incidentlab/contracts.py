@@ -27,17 +27,17 @@ class StartRequest(Strict):
 
 class Hypothesis(Strict):
     cause: str = Field(min_length=1, max_length=200)
-    observation_ids: list[str] = Field(min_length=1, max_length=8)
+    observation_ids: list[str] = Field(min_length=1, max_length=17)
 
 
 class Step(Strict):
     tool: Tool
-    purpose: str = Field(min_length=1, max_length=300)
+    purpose: str = Field(min_length=1, max_length=300, description="Why this operation is needed. A step contains tool and purpose only, never operation arguments.")
 
 
 class PlanInput(Strict):
-    hypotheses: list[Hypothesis] = Field(min_length=1, max_length=4)
-    steps: list[Step] = Field(min_length=1, max_length=3)
+    hypotheses: list[Hypothesis] = Field(min_length=1, max_length=8)
+    steps: list[Step] = Field(min_length=1, max_length=8)
     finish_recommended: bool = False
 
 
@@ -58,7 +58,7 @@ class FinishInput(Strict):
     diagnosis: Literal["pool_exhaustion", "bad_release", "inventory_failure", "unknown"]
     summary: str = Field(min_length=1, max_length=1400)
     uncertainties: list[Annotated[str, Field(max_length=400)]] = Field(max_length=6)
-    observation_ids: list[str] = Field(min_length=1, max_length=12)
+    observation_ids: list[str] = Field(min_length=1, max_length=17)
 
 
 class Observation(Strict):
